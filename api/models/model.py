@@ -23,6 +23,7 @@ from sqlalchemy import Float, Index, PrimaryKeyConstraint, func, text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from configs import dify_config
+from constants import DEFAULT_FILE_NUMBER_LIMITS
 from core.file import FILE_MODEL_IDENTITY, File, FileTransferMethod, FileType
 from core.file import helpers as file_helpers
 from core.file.tool_file_parser import ToolFileParser
@@ -82,7 +83,7 @@ class App(Base):
     tenant_id: Mapped[str] = db.Column(StringUUID, nullable=False)
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=False, server_default=db.text("''::character varying"))
-    mode = db.Column(db.String(255), nullable=False)
+    mode: Mapped[str] = mapped_column(db.String(255), nullable=False)
     icon_type = db.Column(db.String(255), nullable=True)  # image, emoji
     icon = db.Column(db.String(255))
     icon_background = db.Column(db.String(255))
@@ -257,7 +258,7 @@ class App(Base):
                 provider_id = tool.get("provider_id", "")
 
                 if provider_type == ToolProviderType.API.value:
-                    if provider_id not in existing_api_providers:
+                    if uuid.UUID(provider_id) not in existing_api_providers:
                         deleted_tools.append(
                             {
                                 "type": ToolProviderType.API.value,
@@ -442,7 +443,7 @@ class AppModelConfig(Base):
             else {
                 "image": {
                     "enabled": False,
-                    "number_limits": 3,
+                    "number_limits": DEFAULT_FILE_NUMBER_LIMITS,
                     "detail": "high",
                     "transfer_methods": ["remote_url", "local_file"],
                 }
@@ -604,7 +605,7 @@ class InstalledApp(Base):
         return tenant
 
 
-class Conversation(Base):
+class Conversation(db.Model):  # type: ignore[name-defined]
     __tablename__ = "conversations"
     __table_args__ = (
         db.PrimaryKeyConstraint("id", name="conversation_pkey"),
@@ -791,7 +792,7 @@ class Conversation(Base):
             WorkflowRunStatus.SUCCEEDED: 0,
             WorkflowRunStatus.FAILED: 0,
             WorkflowRunStatus.STOPPED: 0,
-            WorkflowRunStatus.PARTIAL_SUCCESSED: 0,
+            WorkflowRunStatus.PARTIAL_SUCCEEDED: 0,
         }
 
         for message in messages:
@@ -802,7 +803,7 @@ class Conversation(Base):
             {
                 "success": status_counts[WorkflowRunStatus.SUCCEEDED],
                 "failed": status_counts[WorkflowRunStatus.FAILED],
-                "partial_success": status_counts[WorkflowRunStatus.PARTIAL_SUCCESSED],
+                "partial_success": status_counts[WorkflowRunStatus.PARTIAL_SUCCEEDED],
             }
             if messages
             else None
@@ -838,8 +839,35 @@ class Conversation(Base):
     def in_debug_mode(self):
         return self.override_model_configs is not None
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "app_id": self.app_id,
+            "app_model_config_id": self.app_model_config_id,
+            "model_provider": self.model_provider,
+            "override_model_configs": self.override_model_configs,
+            "model_id": self.model_id,
+            "mode": self.mode,
+            "name": self.name,
+            "summary": self.summary,
+            "inputs": self.inputs,
+            "introduction": self.introduction,
+            "system_instruction": self.system_instruction,
+            "system_instruction_tokens": self.system_instruction_tokens,
+            "status": self.status,
+            "invoke_from": self.invoke_from,
+            "from_source": self.from_source,
+            "from_end_user_id": self.from_end_user_id,
+            "from_account_id": self.from_account_id,
+            "read_at": self.read_at,
+            "read_account_id": self.read_account_id,
+            "dialogue_count": self.dialogue_count,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
-class Message(Base):
+
+class Message(db.Model):  # type: ignore[name-defined]
     __tablename__ = "messages"
     __table_args__ = (
         PrimaryKeyConstraint("id", name="message_pkey"),
@@ -1081,19 +1109,19 @@ class Message(Base):
 
         files = []
         for message_file in message_files:
-            if message_file.transfer_method == "local_file":
+            if message_file.transfer_method == FileTransferMethod.LOCAL_FILE.value:
                 if message_file.upload_file_id is None:
                     raise ValueError(f"MessageFile {message_file.id} is a local file but has no upload_file_id")
                 file = file_factory.build_from_mapping(
                     mapping={
                         "id": message_file.id,
-                        "upload_file_id": message_file.upload_file_id,
-                        "transfer_method": message_file.transfer_method,
                         "type": message_file.type,
+                        "transfer_method": message_file.transfer_method,
+                        "upload_file_id": message_file.upload_file_id,
                     },
                     tenant_id=current_app.tenant_id,
                 )
-            elif message_file.transfer_method == "remote_url":
+            elif message_file.transfer_method == FileTransferMethod.REMOTE_URL.value:
                 if message_file.url is None:
                     raise ValueError(f"MessageFile {message_file.id} is a remote url but has no url")
                 file = file_factory.build_from_mapping(
@@ -1101,11 +1129,12 @@ class Message(Base):
                         "id": message_file.id,
                         "type": message_file.type,
                         "transfer_method": message_file.transfer_method,
+                        "upload_file_id": message_file.upload_file_id,
                         "url": message_file.url,
                     },
                     tenant_id=current_app.tenant_id,
                 )
-            elif message_file.transfer_method == "tool_file":
+            elif message_file.transfer_method == FileTransferMethod.TOOL_FILE.value:
                 if message_file.upload_file_id is None:
                     assert message_file.url is not None
                     message_file.upload_file_id = message_file.url.split("/")[-1].split(".")[0]
@@ -1126,7 +1155,7 @@ class Message(Base):
             files.append(file)
 
         result = [
-            {"belongs_to": message_file.belongs_to, **file.to_dict()}
+            {"belongs_to": message_file.belongs_to, "upload_file_id": message_file.upload_file_id, **file.to_dict()}
             for (file, message_file) in zip(files, message_files)
         ]
 
@@ -1190,7 +1219,7 @@ class Message(Base):
         )
 
 
-class MessageFeedback(Base):
+class MessageFeedback(db.Model):  # type: ignore[name-defined]
     __tablename__ = "message_feedbacks"
     __table_args__ = (
         db.PrimaryKeyConstraint("id", name="message_feedback_pkey"),
@@ -1217,7 +1246,7 @@ class MessageFeedback(Base):
         return account
 
 
-class MessageFile(Base):
+class MessageFile(db.Model):  # type: ignore[name-defined]
     __tablename__ = "message_files"
     __table_args__ = (
         db.PrimaryKeyConstraint("id", name="message_file_pkey"),
@@ -1258,7 +1287,7 @@ class MessageFile(Base):
     created_at: Mapped[datetime] = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp())
 
 
-class MessageAnnotation(Base):
+class MessageAnnotation(db.Model):  # type: ignore[name-defined]
     __tablename__ = "message_annotations"
     __table_args__ = (
         db.PrimaryKeyConstraint("id", name="message_annotation_pkey"),
@@ -1327,7 +1356,7 @@ class AppAnnotationHitHistory(db.Model):  # type: ignore[name-defined]
         return account
 
 
-class AppAnnotationSetting(Base):
+class AppAnnotationSetting(db.Model):  # type: ignore[name-defined]
     __tablename__ = "app_annotation_settings"
     __table_args__ = (
         db.PrimaryKeyConstraint("id", name="app_annotation_settings_pkey"),

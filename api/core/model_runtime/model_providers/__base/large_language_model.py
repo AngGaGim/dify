@@ -45,7 +45,7 @@ class LargeLanguageModel(AIModel):
         stream: bool = True,
         user: Optional[str] = None,
         callbacks: Optional[list[Callback]] = None,
-    ) -> Union[LLMResult, Generator]:
+    ) -> Union[LLMResult, Generator[LLMResultChunk, None, None]]:
         """
         Invoke large language model
 
@@ -205,22 +205,26 @@ class LargeLanguageModel(AIModel):
                 user=user,
                 callbacks=callbacks,
             )
-
-        return result
+            # Following https://github.com/langgenius/dify/issues/17799,
+            # we removed the prompt_messages from the chunk on the plugin daemon side.
+            # To ensure compatibility, we add the prompt_messages back here.
+            result.prompt_messages = prompt_messages
+            return result
+        raise NotImplementedError("unsupported invoke result type", type(result))
 
     def _invoke_result_generator(
         self,
         model: str,
         result: Generator,
         credentials: dict,
-        prompt_messages: list[PromptMessage],
+        prompt_messages: Sequence[PromptMessage],
         model_parameters: dict,
         tools: Optional[list[PromptMessageTool]] = None,
         stop: Optional[Sequence[str]] = None,
         stream: bool = True,
         user: Optional[str] = None,
         callbacks: Optional[list[Callback]] = None,
-    ) -> Generator:
+    ) -> Generator[LLMResultChunk, None, None]:
         """
         Invoke result generator
 
@@ -228,13 +232,17 @@ class LargeLanguageModel(AIModel):
         :return: result generator
         """
         callbacks = callbacks or []
-        prompt_message = AssistantPromptMessage(content="")
+        assistant_message = AssistantPromptMessage(content="")
         usage = None
         system_fingerprint = None
         real_model = model
 
         try:
             for chunk in result:
+                # Following https://github.com/langgenius/dify/issues/17799,
+                # we removed the prompt_messages from the chunk on the plugin daemon side.
+                # To ensure compatibility, we add the prompt_messages back here.
+                chunk.prompt_messages = prompt_messages
                 yield chunk
 
                 self._trigger_new_chunk_callbacks(
@@ -250,7 +258,7 @@ class LargeLanguageModel(AIModel):
                     callbacks=callbacks,
                 )
 
-                prompt_message.content += chunk.delta.message.content
+                assistant_message.content += chunk.delta.message.content
                 real_model = chunk.model
                 if chunk.delta.usage:
                     usage = chunk.delta.usage
@@ -265,7 +273,7 @@ class LargeLanguageModel(AIModel):
             result=LLMResult(
                 model=real_model,
                 prompt_messages=prompt_messages,
-                message=prompt_message,
+                message=assistant_message,
                 usage=usage or LLMUsage.empty_usage(),
                 system_fingerprint=system_fingerprint,
             ),
@@ -295,18 +303,20 @@ class LargeLanguageModel(AIModel):
         :param tools: tools for tool calling
         :return:
         """
-        plugin_model_manager = PluginModelManager()
-        return plugin_model_manager.get_llm_num_tokens(
-            tenant_id=self.tenant_id,
-            user_id="unknown",
-            plugin_id=self.plugin_id,
-            provider=self.provider_name,
-            model_type=self.model_type.value,
-            model=model,
-            credentials=credentials,
-            prompt_messages=prompt_messages,
-            tools=tools,
-        )
+        if dify_config.PLUGIN_BASED_TOKEN_COUNTING_ENABLED:
+            plugin_model_manager = PluginModelManager()
+            return plugin_model_manager.get_llm_num_tokens(
+                tenant_id=self.tenant_id,
+                user_id="unknown",
+                plugin_id=self.plugin_id,
+                provider=self.provider_name,
+                model_type=self.model_type.value,
+                model=model,
+                credentials=credentials,
+                prompt_messages=prompt_messages,
+                tools=tools,
+            )
+        return 0
 
     def _calc_response_usage(
         self, model: str, credentials: dict, prompt_tokens: int, completion_tokens: int
@@ -401,7 +411,7 @@ class LargeLanguageModel(AIModel):
         chunk: LLMResultChunk,
         model: str,
         credentials: dict,
-        prompt_messages: list[PromptMessage],
+        prompt_messages: Sequence[PromptMessage],
         model_parameters: dict,
         tools: Optional[list[PromptMessageTool]] = None,
         stop: Optional[Sequence[str]] = None,
@@ -448,7 +458,7 @@ class LargeLanguageModel(AIModel):
         model: str,
         result: LLMResult,
         credentials: dict,
-        prompt_messages: list[PromptMessage],
+        prompt_messages: Sequence[PromptMessage],
         model_parameters: dict,
         tools: Optional[list[PromptMessageTool]] = None,
         stop: Optional[Sequence[str]] = None,
