@@ -227,7 +227,7 @@ class ProviderManager:
             )
 
             provider_configurations[str(provider_id_entity)] = provider_configuration
-
+        print(f"get_configuratiosn provider_configurations:{provider_configurations}")
         # Return the encapsulated object
         return provider_configurations
 

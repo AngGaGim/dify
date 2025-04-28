@@ -37,44 +37,49 @@ class ModelProviderService:
         :return:
         """
         # Get all provider configurations of the current workspace
-        provider_configurations = self.provider_manager.get_configurations(tenant_id)
+        try:
+            provider_configurations = self.provider_manager.get_configurations(tenant_id)
 
-        provider_responses = []
-        for provider_configuration in provider_configurations.values():
-            if model_type:
-                model_type_entity = ModelType.value_of(model_type)
-                if model_type_entity not in provider_configuration.provider.supported_model_types:
-                    continue
+            provider_responses = []
+            for provider_configuration in provider_configurations.values():
+                if model_type:
+                    model_type_entity = ModelType.value_of(model_type)
+                    if model_type_entity not in provider_configuration.provider.supported_model_types:
+                        continue
 
-            provider_response = ProviderResponse(
-                tenant_id=tenant_id,
-                provider=provider_configuration.provider.provider,
-                label=provider_configuration.provider.label,
-                description=provider_configuration.provider.description,
-                icon_small=provider_configuration.provider.icon_small,
-                icon_large=provider_configuration.provider.icon_large,
-                background=provider_configuration.provider.background,
-                help=provider_configuration.provider.help,
-                supported_model_types=provider_configuration.provider.supported_model_types,
-                configurate_methods=provider_configuration.provider.configurate_methods,
-                provider_credential_schema=provider_configuration.provider.provider_credential_schema,
-                model_credential_schema=provider_configuration.provider.model_credential_schema,
-                preferred_provider_type=provider_configuration.preferred_provider_type,
-                custom_configuration=CustomConfigurationResponse(
-                    status=CustomConfigurationStatus.ACTIVE
-                    if provider_configuration.is_custom_configuration_available()
-                    else CustomConfigurationStatus.NO_CONFIGURE
-                ),
-                system_configuration=SystemConfigurationResponse(
-                    enabled=provider_configuration.system_configuration.enabled,
-                    current_quota_type=provider_configuration.system_configuration.current_quota_type,
-                    quota_configurations=provider_configuration.system_configuration.quota_configurations,
-                ),
-            )
+                provider_response = ProviderResponse(
+                    tenant_id=tenant_id,
+                    provider=provider_configuration.provider.provider,
+                    label=provider_configuration.provider.label,
+                    description=provider_configuration.provider.description,
+                    icon_small=provider_configuration.provider.icon_small,
+                    icon_large=provider_configuration.provider.icon_large,
+                    background=provider_configuration.provider.background,
+                    help=provider_configuration.provider.help,
+                    supported_model_types=provider_configuration.provider.supported_model_types,
+                    configurate_methods=provider_configuration.provider.configurate_methods,
+                    provider_credential_schema=provider_configuration.provider.provider_credential_schema,
+                    model_credential_schema=provider_configuration.provider.model_credential_schema,
+                    preferred_provider_type=provider_configuration.preferred_provider_type,
+                    custom_configuration=CustomConfigurationResponse(
+                        status=CustomConfigurationStatus.ACTIVE
+                        if provider_configuration.is_custom_configuration_available()
+                        else CustomConfigurationStatus.NO_CONFIGURE
+                    ),
+                    system_configuration=SystemConfigurationResponse(
+                        enabled=provider_configuration.system_configuration.enabled,
+                        current_quota_type=provider_configuration.system_configuration.current_quota_type,
+                        quota_configurations=provider_configuration.system_configuration.quota_configurations,
+                    ),
+                )
 
-            provider_responses.append(provider_response)
-
-        return provider_responses
+                provider_responses.append(provider_response)
+                return provider_responses
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print("Failed to get provider list: {}".format(e))
+            return []
 
     def get_models_by_provider(self, tenant_id: str, provider: str) -> list[ModelWithProviderEntityResponse]:
         """
@@ -88,7 +93,7 @@ class ModelProviderService:
         """
         # Get all provider configurations of the current workspace
         provider_configurations = self.provider_manager.get_configurations(tenant_id)
-
+        print("provider_configurations",provider_configurations)
         # Get provider available models
         return [
             ModelWithProviderEntityResponse(tenant_id=tenant_id, model=model)

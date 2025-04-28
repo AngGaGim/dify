@@ -55,11 +55,12 @@ class BasePluginManager:
         headers = headers or {}
         headers["X-Api-Key"] = plugin_daemon_inner_api_key
         headers["Accept-Encoding"] = "gzip, deflate, br"
-
+        print(f"request_url:{url} data:{data} method:{method}")
         if headers.get("Content-Type") == "application/json" and isinstance(data, dict):
             data = json.dumps(data)
 
         try:
+
             response = requests.request(
                 method=method, url=str(url), headers=headers, data=data, params=params, stream=stream, files=files
             )

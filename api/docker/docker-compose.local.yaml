@@ -1,0 +1,128 @@
+services:
+  moonlit-db:
+    image: postgres:15-alpine
+    container_name: moonlit-db
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: moonlit123456
+      POSTGRES_DB: moonlit
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: Asia/Shanghai
+    volumes:
+      - ./volumes/db/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - moonlit_rag
+
+  moonlit-redis:
+    image: redis:6-alpine
+    container_name: moonlit-redis
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./volumes/redis/data:/data
+    command: redis-server --requirepass moonlit123456
+    ports:
+      - "6379:6379"
+    networks:
+      - moonlit_rag
+
+  moonlit-es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: moonlit-es
+    volumes:
+      - ./volumes/es/data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    environment:
+      - node.name=es01
+      - ELASTIC_PASSWORD=moonlit123456
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - TZ=Asia/Shanghai
+    mem_limit: 8073741824
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: [ "CMD-SHELL", "curl http://localhost:9200" ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: always
+    networks:
+      - moonlit_rag
+
+  moonlit-minio:
+    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    container_name: moonlit-minio
+    command: server --console-address ":9001" /data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=moonlit
+      - MINIO_ROOT_PASSWORD=moonlit123456
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./volumes/minio_data:/data
+    restart: always
+    networks:
+      - moonlit_rag
+
+#  moonlit-sandbox:
+#    image: langgenius/dify-sandbox:0.2.10
+#    container_name: moonlit-sandbox
+#    restart: always
+#    environment:
+##      ALLOWED_SYSCALLS: "0,1,3,4,8,9,10,11,12,13,14,15,16,16,23,24,25,39,64,96,97,98,102,105,106,131,186,202,217,218,228,230,231,234,255,257,262,302,312,318"
+#      ALLOWED_SYSCALLS: "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256,257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,289,290,291,292,293,294,295,296,297,298,299,300,301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336,337,338,339,340,341,342,343,344,345,346,347,348,349,350,351,352,353,354,355,356,357,358,359,360,361,362,363,364,365,366,367,368,369,370,371,372,373,374,375,376,377,378,379,380,381,382,383,384,385,386,387,388,389,390,391,392,393,394,395,396,397,398,399,400,401,402,403,404,405,406,407,408,409,410,411,412,413,414,415,416,417,418,419,420,421,422,423,424,425,426,427,428,429,430,431,432,433,434,435,436,437,438,439,440,441,442,443,444,445,446,447,448,449,450,451,452,453,454,455,456,457,458,459,460,461,462,463,464,465,466,467,468,469,470,471,472,473,474,475,476,477,478,479,480,481,482,483,484,485,486,487,488,489,490,491,492,493,494,495,496,497,498,499,500"
+#      API_KEY: ${SANDBOX_API_KEY:-sandbox}
+#      GIN_MODE: ${SANDBOX_GIN_MODE:-release}
+#      WORKER_TIMEOUT: ${SANDBOX_WORKER_TIMEOUT:-600}
+#      ENABLE_NETWORK: ${SANDBOX_ENABLE_NETWORK:-true}
+#      HTTP_PROXY: ${SANDBOX_HTTP_PROXY:-http://moonlit-ssrf-proxy:3128}
+#      HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://moonlit-ssrf-proxy:3128}
+#      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
+#    volumes:
+#      - ./volumes/sandbox/dependencies:/dependencies
+#      - ./volumes/sandbox/conf:/conf
+#    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost:8194/health" ]
+#    networks:
+#      - moonlit_rag
+#
+#  moonlit-ssrf-proxy:
+#    image: ubuntu/squid:6.6-24.04_edge
+#    container_name: moonlit-ssrf-proxy
+#    restart: always
+#    volumes:
+#      - ./ssrf_proxy/squid.conf.template:/etc/squid/squid.conf.template
+#      - ./ssrf_proxy/docker-entrypoint.sh:/docker-entrypoint-mount.sh
+#    entrypoint: [ "sh", "-c", "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh" ]
+#    environment:
+#      # pls clearly modify the squid env vars to fit your network environment.
+#      HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
+#      COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
+#      REVERSE_PROXY_PORT: ${SSRF_REVERSE_PROXY_PORT:-8194}
+#      SANDBOX_HOST: ${SSRF_SANDBOX_HOST:-sandbox}
+#      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
+#    ports:
+#      - "${EXPOSE_SSRF_PROXY_PORT:-3128}:${SSRF_HTTP_PORT:-3128}"
+#      - "${EXPOSE_SANDBOX_PORT:-8194}:${SANDBOX_PORT:-8194}"
+#    networks:
+#      - moonlit_ssrf_proxy_network
+#      - moonlit_rag
+
+networks:
+#  moonlit_ssrf_proxy_network:
+#    driver: bridge
+#    internal: true
+  moonlit_rag:
+    driver: bridge
